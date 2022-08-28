@@ -1,4 +1,5 @@
 from __future__ import print_function
+import os
 from enum import Enum
 import os.path
 import requests
@@ -14,6 +15,7 @@ from googleapiclient.http import MediaFileUpload
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 CEX_BASE_URL = "https://wss2.cex.uk.webuy.io/v3"
 FILE_NAME = "cex_stock.xlsx"
+EXISTING_FILE = "existing_cex_stock.xlsx"
 
 
 class Stores(Enum):
@@ -59,12 +61,45 @@ def get_stock_data(store_id: str) -> dict:
     return stock_data
 
 
+def compare_existing_stock(store, new_stock: dict):
+    workbook = pd.ExcelFile(EXISTING_FILE)
+    existing_df = pd.read_excel(workbook, sheet_name=store)
+    existing_stock = dict(existing_df)
+
+    all_stock = {"Category": [], "Title": [], "Price": [], "For Sale": [], "Status": []}
+    for index, title in enumerate(list(new_stock["Title"])):
+        all_stock["Category"].append(new_stock["Category"][index])
+        all_stock["Title"].append(new_stock["Title"][index])
+        all_stock["Price"].append(new_stock["Price"][index])
+        all_stock["For Sale"].append(new_stock["For Sale"][index])
+        if title not in list(existing_stock["Title"]):
+            all_stock["Status"].append("NEW")
+        else:
+            all_stock["Status"].append("-")
+
+    for index, title in enumerate(existing_stock["Title"]):
+        if (
+            title not in new_stock["Title"]
+            and existing_stock["Status"][index] != "SOLD"
+        ):
+            all_stock["Category"].append(existing_stock["Category"][index])
+            all_stock["Title"].append(existing_stock["Title"][index])
+            all_stock["Price"].append(existing_stock["Price"][index])
+            all_stock["For Sale"].append(existing_stock["For Sale"][index])
+            all_stock["Status"].append("SOLD")
+
+    return all_stock
+
+
 def construct_stock_spreadsheet():
+    os.rename(FILE_NAME, EXISTING_FILE)
     with pd.ExcelWriter(FILE_NAME) as writer:
         print(f"Generating new stock data for: {', '.join([e.name for e in Stores])}")
         for store in Stores:
+            print(f"{store.name} stock data generated")
             stock_data = get_stock_data(store.value)
-            df = pd.DataFrame.from_dict(stock_data)
+            stock_data_with_status = compare_existing_stock(store.name, stock_data)
+            df = pd.DataFrame.from_dict(stock_data_with_status)
             df.sort_values(by=["Category", "Title"], inplace=True)
             df.reset_index(drop=True, inplace=True)
             df.to_excel(writer, sheet_name=store.name, index=False)
