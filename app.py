@@ -1,6 +1,7 @@
 from __future__ import print_function
 import os
 from enum import Enum
+from datetime import datetime
 import os.path
 import requests
 import pandas as pd
@@ -16,6 +17,8 @@ SCOPES = ["https://www.googleapis.com/auth/drive"]
 CEX_BASE_URL = "https://wss2.cex.uk.webuy.io/v3"
 FILE_NAME = "cex_stock.xlsx"
 EXISTING_FILE = "existing_cex_stock.xlsx"
+
+DATE_FMT = "%d/%m/%Y"
 
 
 class Stores(Enum):
@@ -61,34 +64,89 @@ def get_stock_data(store_id: str) -> dict:
     return stock_data
 
 
-def compare_existing_stock(store, new_stock: dict):
+def compare_existing_stock(store, new_stock: dict) -> dict:
     workbook = pd.ExcelFile(EXISTING_FILE)
     existing_df = pd.read_excel(workbook, sheet_name=store)
     existing_stock = dict(existing_df)
 
-    all_stock = {"Category": [], "Title": [], "Price": [], "For Sale": [], "Status": []}
+    all_stock = {
+        "Category": [],
+        "Title": [],
+        "Price": [],
+        "For Sale": [],
+        "Status": [],
+        "Date Added/Removed": [],
+    }
     for index, title in enumerate(list(new_stock["Title"])):
         all_stock["Category"].append(new_stock["Category"][index])
         all_stock["Title"].append(new_stock["Title"][index])
         all_stock["Price"].append(new_stock["Price"][index])
         all_stock["For Sale"].append(new_stock["For Sale"][index])
         if title not in list(existing_stock["Title"]):
+            today_str = datetime.today().strftime(DATE_FMT)
             all_stock["Status"].append("NEW")
+            all_stock["Date Added/Removed"].append(today_str)
+        elif stock_age(title, existing_stock) <= 2:
+            existing_date = find_existing_date(title, existing_stock)
+            all_stock["Status"].append("NEW")
+            all_stock["Date Added/Removed"].append(existing_date)
         else:
+            existing_date = find_existing_date(title, existing_stock)
             all_stock["Status"].append("-")
+            all_stock["Date Added/Removed"].append(existing_date)
 
     for index, title in enumerate(existing_stock["Title"]):
-        if (
-            title not in new_stock["Title"]
-            and existing_stock["Status"][index] != "SOLD"
-        ):
+        if title not in new_stock["Title"]:
+            today_str = datetime.today().strftime(DATE_FMT)
             all_stock["Category"].append(existing_stock["Category"][index])
             all_stock["Title"].append(existing_stock["Title"][index])
             all_stock["Price"].append(existing_stock["Price"][index])
             all_stock["For Sale"].append(existing_stock["For Sale"][index])
-            all_stock["Status"].append("SOLD")
+            if existing_stock["Status"][index] != "SOLD":
+                all_stock["Status"].append("SOLD")
+                all_stock["Date Added/Removed"].append(today_str)
+            else:
+                all_stock["Status"].append(existing_stock["Status"][index])
+                all_stock["Date Added/Removed"].append(
+                    existing_stock["Date Added/Removed"][index]
+                )
 
-    return all_stock
+    return remove_sold_stock(all_stock)
+
+
+def remove_sold_stock(all_stock: dict) -> dict:
+    today = datetime.today()
+    filtered_stock = {
+        "Category": [],
+        "Title": [],
+        "Price": [],
+        "For Sale": [],
+        "Status": [],
+        "Date Added/Removed": [],
+    }
+    for index, status in enumerate(all_stock["Status"]):
+        existing_date = datetime.strptime(
+            all_stock["Date Added/Removed"][index], DATE_FMT
+        )
+        stock_age = (today - existing_date).days
+        if status != "SOLD" or (status == "SOLD" and stock_age <= 2):
+            for k, v in filtered_stock.items():
+                filtered_stock[k].append(all_stock[k][index])
+    return filtered_stock
+
+
+def stock_age(title: str, existing_stock: dict) -> int:
+    existing_date_str = find_existing_date(title, existing_stock)
+    today = datetime.today()
+    existing_date = datetime.strptime(existing_date_str, DATE_FMT)
+    delta = today - existing_date
+    return delta.days
+
+
+def find_existing_date(title: str, existing_stock: dict) -> str:
+    for index, existing_title in enumerate(existing_stock["Title"]):
+        if title == existing_title:
+            return existing_stock["Date Added/Removed"][index]
 
 
 def construct_stock_spreadsheet():
@@ -184,5 +242,5 @@ def upload_file(creds):
 
 if __name__ == "__main__":
     construct_stock_spreadsheet()
-    creds = google_sign_in()
-    upload_file(creds)
+    # creds = google_sign_in()
+    # upload_file(creds)
