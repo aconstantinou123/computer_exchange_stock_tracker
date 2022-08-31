@@ -36,6 +36,11 @@ class Categories(Enum):
     SuperNintendoSoftware = 1037
     Xbox1Games = 673
 
+class Status(Enum):
+    New = "NEW"
+    InStock = "-"
+    Sold = "SOLD"
+
 
 def get_stock_data(store_id: str) -> dict:
     category_str = ",".join([str(e.value) for e in Categories])
@@ -84,15 +89,15 @@ def compare_existing_stock(store, new_stock: dict) -> dict:
         all_stock["For Sale"].append(new_stock["For Sale"][index])
         if title not in list(existing_stock["Title"]):
             today_str = datetime.today().strftime(DATE_FMT)
-            all_stock["Status"].append("NEW")
+            all_stock["Status"].append(Status.New.value)
             all_stock["Date Added/Removed"].append(today_str)
-        elif stock_age(title, existing_stock) <= 2:
+        elif stock_age(title, existing_stock) <= 1:
             existing_date = find_existing_date(title, existing_stock)
-            all_stock["Status"].append("NEW")
+            all_stock["Status"].append(Status.New.value)
             all_stock["Date Added/Removed"].append(existing_date)
         else:
             existing_date = find_existing_date(title, existing_stock)
-            all_stock["Status"].append("-")
+            all_stock["Status"].append(Status.InStock.value)
             all_stock["Date Added/Removed"].append(existing_date)
 
     for index, title in enumerate(existing_stock["Title"]):
@@ -102,8 +107,8 @@ def compare_existing_stock(store, new_stock: dict) -> dict:
             all_stock["Title"].append(existing_stock["Title"][index])
             all_stock["Price"].append(existing_stock["Price"][index])
             all_stock["For Sale"].append(existing_stock["For Sale"][index])
-            if existing_stock["Status"][index] != "SOLD":
-                all_stock["Status"].append("SOLD")
+            if existing_stock["Status"][index] != Status.Sold.value:
+                all_stock["Status"].append(Status.Sold.value)
                 all_stock["Date Added/Removed"].append(today_str)
             else:
                 all_stock["Status"].append(existing_stock["Status"][index])
@@ -129,7 +134,7 @@ def remove_sold_stock(all_stock: dict) -> dict:
             all_stock["Date Added/Removed"][index], DATE_FMT
         )
         stock_age = (today - existing_date).days
-        if status != "SOLD" or (status == "SOLD" and stock_age <= 2):
+        if status != Status.Sold.value or (status == Status.Sold.value and stock_age <= 1):
             for k, v in filtered_stock.items():
                 filtered_stock[k].append(all_stock[k][index])
     return filtered_stock
@@ -149,6 +154,15 @@ def find_existing_date(title: str, existing_stock: dict) -> str:
             return existing_stock["Date Added/Removed"][index]
 
 
+def highlight_cells(value):
+    color = "white"
+    if value.Status == Status.New.value:
+        color = "green"
+    elif value.Status == Status.Sold.value:
+        color = "red"
+    return [f"background-color: {color}"] * len(value) 
+
+
 def construct_stock_spreadsheet():
     os.rename(FILE_NAME, EXISTING_FILE)
     with pd.ExcelWriter(FILE_NAME) as writer:
@@ -160,7 +174,9 @@ def construct_stock_spreadsheet():
             df = pd.DataFrame.from_dict(stock_data_with_status)
             df.sort_values(by=["Category", "Title"], inplace=True)
             df.reset_index(drop=True, inplace=True)
-            df.to_excel(writer, sheet_name=store.name, index=False)
+            df_styler = df.style.apply(highlight_cells, axis=1)
+            df_styler.to_excel(writer, sheet_name=store.name, index=False)
+
             worksheet = writer.sheets[store.name]
             for idx, col in enumerate(df):
                 series = df[col]
