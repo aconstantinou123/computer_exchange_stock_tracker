@@ -242,5 +242,5 @@ def upload_file(creds):
 
 if __name__ == "__main__":
     construct_stock_spreadsheet()
-    # creds = google_sign_in()
-    # upload_file(creds)
+    creds = google_sign_in()
+    upload_file(creds)
