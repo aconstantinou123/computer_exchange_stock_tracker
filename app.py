@@ -36,10 +36,20 @@ class Categories(Enum):
     SuperNintendoSoftware = 1037
     Xbox1Games = 673
 
+
 class Status(Enum):
     New = "NEW"
     InStock = "-"
     Sold = "SOLD"
+
+
+class Columns(Enum):
+    Category = "Category"
+    Title = "Title"
+    Price = "Price"
+    ForSale = "For Sale"
+    Status = "Status"
+    DateAddedOrRemoved = "Date Added/Removed"
 
 
 def get_stock_data(store_id: str) -> dict:
@@ -60,12 +70,19 @@ def get_stock_data(store_id: str) -> dict:
         games.extend(data["boxes"])
         games_retrieved = len(games)
 
-    stock_data = {"Category": [], "Title": [], "Price": [], "For Sale": []}
+    stock_data = {
+        Columns.Category.value: [],
+        Columns.Title.value: [],
+        Columns.Price.value: [],
+        Columns.ForSale.value: [],
+    }
     for game in games:
-        stock_data["Category"].append(game["categoryName"])
-        stock_data["Title"].append(game["boxName"])
-        stock_data["Price"].append(game["sellPrice"])
-        stock_data["For Sale"].append(True if game["boxSaleAllowed"] == 1 else False)
+        stock_data[Columns.Category.value].append(game["categoryName"])
+        stock_data[Columns.Title.value].append(game["boxName"])
+        stock_data[Columns.Price.value].append(game["sellPrice"])
+        stock_data[Columns.ForSale.value].append(
+            True if game["boxSaleAllowed"] == 1 else False
+        )
     return stock_data
 
 
@@ -75,66 +92,91 @@ def compare_existing_stock(store, new_stock: dict) -> dict:
     existing_stock = dict(existing_df)
 
     all_stock = {
-        "Category": [],
-        "Title": [],
-        "Price": [],
-        "For Sale": [],
-        "Status": [],
-        "Date Added/Removed": [],
+        Columns.Category.value: [],
+        Columns.Title.value: [],
+        Columns.Price.value: [],
+        Columns.ForSale.value: [],
+        Columns.Status.value: [],
+        Columns.DateAddedOrRemoved.value: [],
     }
-    for index, title in enumerate(list(new_stock["Title"])):
-        all_stock["Category"].append(new_stock["Category"][index])
-        all_stock["Title"].append(new_stock["Title"][index])
-        all_stock["Price"].append(new_stock["Price"][index])
-        all_stock["For Sale"].append(new_stock["For Sale"][index])
-        if title not in list(existing_stock["Title"]):
+
+    all_stock = format_new_stock(existing_stock, new_stock, all_stock)
+    all_stock = format_existing_stock(existing_stock, new_stock, all_stock)
+    return remove_sold_stock(all_stock)
+
+
+def format_new_stock(existing_stock: dict, new_stock: dict, all_stock: dict) -> dict:
+    for index, title in enumerate(list(new_stock[Columns.Title.value])):
+        all_stock[Columns.Category.value].append(
+            new_stock[Columns.Category.value][index]
+        )
+        all_stock[Columns.Title.value].append(new_stock[Columns.Title.value][index])
+        all_stock[Columns.Price.value].append(new_stock[Columns.Price.value][index])
+        all_stock[Columns.ForSale.value].append(new_stock[Columns.ForSale.value][index])
+        if title not in list(existing_stock[Columns.Title.value]):
             today_str = datetime.today().strftime(DATE_FMT)
-            all_stock["Status"].append(Status.New.value)
-            all_stock["Date Added/Removed"].append(today_str)
+            all_stock[Columns.Status.value].append(Status.New.value)
+            all_stock[Columns.DateAddedOrRemoved.value].append(today_str)
         elif stock_age(title, existing_stock) <= 1:
             existing_date = find_existing_date(title, existing_stock)
-            all_stock["Status"].append(Status.New.value)
-            all_stock["Date Added/Removed"].append(existing_date)
+            all_stock[Columns.Status.value].append(Status.New.value)
+            all_stock[Columns.DateAddedOrRemoved.value].append(existing_date)
         else:
             existing_date = find_existing_date(title, existing_stock)
-            all_stock["Status"].append(Status.InStock.value)
-            all_stock["Date Added/Removed"].append(existing_date)
+            all_stock[Columns.Status.value].append(Status.InStock.value)
+            all_stock[Columns.DateAddedOrRemoved.value].append(existing_date)
+    return all_stock
 
-    for index, title in enumerate(existing_stock["Title"]):
-        if title not in new_stock["Title"]:
+
+def format_existing_stock(
+    existing_stock: dict, new_stock: dict, all_stock: dict
+) -> dict:
+    for index, title in enumerate(existing_stock[Columns.Title.value]):
+        if title not in new_stock[Columns.Title.value]:
             today_str = datetime.today().strftime(DATE_FMT)
-            all_stock["Category"].append(existing_stock["Category"][index])
-            all_stock["Title"].append(existing_stock["Title"][index])
-            all_stock["Price"].append(existing_stock["Price"][index])
-            all_stock["For Sale"].append(existing_stock["For Sale"][index])
-            if existing_stock["Status"][index] != Status.Sold.value:
-                all_stock["Status"].append(Status.Sold.value)
-                all_stock["Date Added/Removed"].append(today_str)
+            all_stock[Columns.Category.value].append(
+                existing_stock[Columns.Category.value][index]
+            )
+            all_stock[Columns.Title.value].append(
+                existing_stock[Columns.Title.value][index]
+            )
+            all_stock[Columns.Price.value].append(
+                existing_stock[Columns.Price.value][index]
+            )
+            all_stock[Columns.ForSale.value].append(
+                existing_stock[Columns.ForSale.value][index]
+            )
+            if existing_stock[Columns.Status.value][index] != Status.Sold.value:
+                all_stock[Columns.Status.value].append(Status.Sold.value)
+                all_stock[Columns.DateAddedOrRemoved.value].append(today_str)
             else:
-                all_stock["Status"].append(existing_stock["Status"][index])
-                all_stock["Date Added/Removed"].append(
-                    existing_stock["Date Added/Removed"][index]
+                all_stock[Columns.Status.value].append(
+                    existing_stock[Columns.Status.value][index]
                 )
-
-    return remove_sold_stock(all_stock)
+                all_stock[Columns.DateAddedOrRemoved.value].append(
+                    existing_stock[Columns.DateAddedOrRemoved.value][index]
+                )
+    return all_stock
 
 
 def remove_sold_stock(all_stock: dict) -> dict:
     today = datetime.today()
     filtered_stock = {
-        "Category": [],
-        "Title": [],
-        "Price": [],
-        "For Sale": [],
-        "Status": [],
-        "Date Added/Removed": [],
+        Columns.Category.value: [],
+        Columns.Title.value: [],
+        Columns.Price.value: [],
+        Columns.ForSale.value: [],
+        Columns.Status.value: [],
+        Columns.DateAddedOrRemoved.value: [],
     }
-    for index, status in enumerate(all_stock["Status"]):
+    for index, status in enumerate(all_stock[Columns.Status.value]):
         existing_date = datetime.strptime(
-            all_stock["Date Added/Removed"][index], DATE_FMT
+            all_stock[Columns.DateAddedOrRemoved.value][index], DATE_FMT
         )
         stock_age = (today - existing_date).days
-        if status != Status.Sold.value or (status == Status.Sold.value and stock_age <= 1):
+        if status != Status.Sold.value or (
+            status == Status.Sold.value and stock_age <= 1
+        ):
             for k, v in filtered_stock.items():
                 filtered_stock[k].append(all_stock[k][index])
     return filtered_stock
@@ -149,9 +191,9 @@ def stock_age(title: str, existing_stock: dict) -> int:
 
 
 def find_existing_date(title: str, existing_stock: dict) -> str:
-    for index, existing_title in enumerate(existing_stock["Title"]):
+    for index, existing_title in enumerate(existing_stock[Columns.Title.value]):
         if title == existing_title:
-            return existing_stock["Date Added/Removed"][index]
+            return existing_stock[Columns.DateAddedOrRemoved.value][index]
 
 
 def highlight_cells(value):
@@ -160,7 +202,7 @@ def highlight_cells(value):
         color = "green"
     elif value.Status == Status.Sold.value:
         color = "red"
-    return [f"background-color: {color}"] * len(value) 
+    return [f"background-color: {color}"] * len(value)
 
 
 def construct_stock_spreadsheet():
@@ -172,7 +214,9 @@ def construct_stock_spreadsheet():
             stock_data = get_stock_data(store.value)
             stock_data_with_status = compare_existing_stock(store.name, stock_data)
             df = pd.DataFrame.from_dict(stock_data_with_status)
-            df.sort_values(by=["Category", "Title"], inplace=True)
+            df.sort_values(
+                by=[Columns.Category.value, Columns.Title.value], inplace=True
+            )
             df.reset_index(drop=True, inplace=True)
             df_styler = df.style.apply(highlight_cells, axis=1)
             df_styler.to_excel(writer, sheet_name=store.name, index=False)
