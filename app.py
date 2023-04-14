@@ -246,7 +246,7 @@ def google_sign_in():
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file("creds.json", SCOPES)
-            creds = flow.run_local_server(port=0)
+            creds = flow.run_local_server(host='localhost', port=8888)
         with open("token.json", "w") as token:
             token.write(creds.to_json())
     return creds
